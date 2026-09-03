@@ -6,31 +6,52 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
+import android.net.Uri;
 import android.net.VpnService;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
     private static final int VPN_REQUEST = 2001;
 
     private TextView statusView;
     private TextView detailView;
+    private TextView selectedAppView;
     private Button connectButton;
-    private Button instagramButton;
+    private Button selectAppButton;
+    private Button openAppButton;
+
     private boolean connected;
     private boolean connecting;
+    private String selectedPackage = "";
+    private String selectedLabel = "";
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
@@ -49,6 +70,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().getDecorView().setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+
+        loadSelection();
         setContentView(buildUi());
 
         IntentFilter filter = new IntentFilter(InstaVpnService.ACTION_STATUS);
@@ -57,6 +80,35 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 50);
         }
+    }
+
+    private void loadSelection() {
+        SharedPreferences prefs = getSharedPreferences(InstaVpnService.PREFS_NAME, MODE_PRIVATE);
+        selectedPackage = prefs.getString(InstaVpnService.PREF_TARGET_PACKAGE, "");
+        selectedLabel = prefs.getString(InstaVpnService.PREF_TARGET_LABEL, "");
+
+        if (!selectedPackage.isEmpty() && getPackageManager().getLaunchIntentForPackage(selectedPackage) == null) {
+            selectedPackage = "";
+            selectedLabel = "";
+        }
+
+        if (selectedPackage.isEmpty()) {
+            Intent instagram = getPackageManager().getLaunchIntentForPackage("com.instagram.android");
+            if (instagram != null) {
+                saveSelection("com.instagram.android", "Instagram");
+            }
+        }
+    }
+
+    private void saveSelection(String packageName, String label) {
+        selectedPackage = packageName == null ? "" : packageName;
+        selectedLabel = label == null ? selectedPackage : label;
+        getSharedPreferences(InstaVpnService.PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(InstaVpnService.PREF_TARGET_PACKAGE, selectedPackage)
+                .putString(InstaVpnService.PREF_TARGET_LABEL, selectedLabel)
+                .apply();
+        refreshSelectedAppUi();
     }
 
     private View buildUi() {
@@ -80,11 +132,40 @@ public class MainActivity extends AppCompatActivity {
         root.addView(title, lp(-1, -2, 0, 0, 0, 8));
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("اتصال هوشمند فقط برای اینستاگرام");
+        subtitle.setText("تونل هوشمند برای برنامه‌ای که خودت انتخاب می‌کنی");
         subtitle.setTextSize(17);
         subtitle.setTextColor(Color.rgb(95, 99, 104));
         subtitle.setGravity(Gravity.CENTER);
-        root.addView(subtitle, lp(-1, -2, 0, 0, 0, 30));
+        root.addView(subtitle, lp(-1, -2, 0, 0, 0, 24));
+
+        LinearLayout appCard = new LinearLayout(this);
+        appCard.setOrientation(LinearLayout.VERTICAL);
+        appCard.setPadding(dp(20), dp(18), dp(20), dp(18));
+        android.graphics.drawable.GradientDrawable appBg = new android.graphics.drawable.GradientDrawable();
+        appBg.setColor(Color.WHITE);
+        appBg.setCornerRadius(dp(22));
+        appCard.setBackground(appBg);
+        root.addView(appCard, lp(-1, -2, 0, 0, 0, 16));
+
+        TextView appTitle = new TextView(this);
+        appTitle.setText("برنامه هدف");
+        appTitle.setTextSize(16);
+        appTitle.setTextColor(Color.rgb(55, 55, 60));
+        appTitle.setTypeface(appTitle.getTypeface(), 1);
+        appCard.addView(appTitle, lp(-1, -2, 0, 0, 0, 8));
+
+        selectedAppView = new TextView(this);
+        selectedAppView.setTextSize(15);
+        selectedAppView.setTextColor(Color.rgb(80, 80, 85));
+        selectedAppView.setLineSpacing(0, 1.15f);
+        appCard.addView(selectedAppView, lp(-1, -2, 0, 0, 0, 12));
+
+        selectAppButton = new Button(this);
+        selectAppButton.setText("انتخاب برنامه");
+        selectAppButton.setTextSize(16);
+        selectAppButton.setAllCaps(false);
+        selectAppButton.setOnClickListener(v -> showAppPicker());
+        appCard.addView(selectAppButton, lp(-1, dp(52), 0, 0, 0, 0));
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -104,7 +185,7 @@ public class MainActivity extends AppCompatActivity {
         card.addView(statusView, lp(-1, -2, 0, 0, 0, 12));
 
         detailView = new TextView(this);
-        detailView.setText("با زدن دکمه، برنامه مسیرهای SOCKS5 عمومی را بررسی می‌کند و یک مسیر سالم را انتخاب می‌کند.");
+        detailView.setText("یک برنامه انتخاب کن؛ سپس با زدن اتصال، مسیرهای موجود بررسی می‌شوند و مسیر سالم انتخاب می‌شود.");
         detailView.setTextSize(15);
         detailView.setTextColor(Color.rgb(110, 110, 115));
         detailView.setGravity(Gravity.CENTER);
@@ -118,28 +199,118 @@ public class MainActivity extends AppCompatActivity {
         connectButton.setOnClickListener(v -> onConnectClicked());
         card.addView(connectButton, lp(-1, dp(58), 0, 0, 0, 10));
 
-        instagramButton = new Button(this);
-        instagramButton.setText("باز کردن اینستاگرام");
-        instagramButton.setTextSize(16);
-        instagramButton.setAllCaps(false);
-        instagramButton.setEnabled(false);
-        instagramButton.setOnClickListener(v -> openInstagram());
-        card.addView(instagramButton, lp(-1, dp(52), 0, 0, 0, 0));
+        openAppButton = new Button(this);
+        openAppButton.setText("باز کردن برنامه");
+        openAppButton.setTextSize(16);
+        openAppButton.setAllCaps(false);
+        openAppButton.setEnabled(false);
+        openAppButton.setOnClickListener(v -> openSelectedApp());
+        card.addView(openAppButton, lp(-1, dp(52), 0, 0, 0, 0));
 
         TextView notes = new TextView(this);
-        notes.setText("• فقط بسته com.instagram.android وارد VPN می‌شود.\n• برای اتصال نیازی به وارد کردن کانفیگ یا داشتن سرور شخصی نیست.\n• پراکسی‌های عمومی متعلق به اشخاص ثالث هستند و کیفیت آن‌ها تضمین‌شده نیست.\n• اطلاعات HTTPS اینستاگرام رمزگذاری است، ولی متادیتای اتصال می‌تواند برای پراکسی قابل مشاهده باشد.");
+        notes.setText("• فقط برنامه‌ای که انتخاب می‌کنی وارد VPN می‌شود.\n• برنامه هدف را هر زمان که اتصال قطع است می‌توانی عوض کنی.\n• برای اتصال نیازی به وارد کردن کانفیگ یا داشتن سرور شخصی نیست.\n• پراکسی‌های عمومی متعلق به اشخاص ثالث هستند و کیفیت یا حریم خصوصی آن‌ها تضمین‌شده نیست.");
         notes.setTextSize(14);
         notes.setTextColor(Color.rgb(117, 117, 117));
         notes.setLineSpacing(dp(2), 1.3f);
         root.addView(notes, lp(-1, -2, 0, 6, 0, 0));
 
+        refreshSelectedAppUi();
         return scroll;
+    }
+
+    private void showAppPicker() {
+        if (connected || connecting) return;
+
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        PackageManager pm = getPackageManager();
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL);
+
+        List<AppEntry> allApps = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (ResolveInfo info : resolveInfos) {
+            if (info.activityInfo == null || info.activityInfo.packageName == null) continue;
+            String packageName = info.activityInfo.packageName;
+            if (getPackageName().equals(packageName) || !seen.add(packageName)) continue;
+            CharSequence labelCs = info.loadLabel(pm);
+            String label = labelCs == null ? packageName : labelCs.toString();
+            allApps.add(new AppEntry(label, packageName));
+        }
+        allApps.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp(16), dp(8), dp(16), 0);
+
+        EditText search = new EditText(this);
+        search.setHint("جستجوی نام برنامه…");
+        search.setSingleLine(true);
+        container.addView(search, new LinearLayout.LayoutParams(-1, dp(54)));
+
+        ListView list = new ListView(this);
+        container.addView(list, new LinearLayout.LayoutParams(-1, dp(420)));
+
+        List<AppEntry> visibleApps = new ArrayList<>(allApps);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_list_item_1,
+                toDisplayStrings(visibleApps)
+        );
+        list.setAdapter(adapter);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("انتخاب برنامه هدف")
+                .setView(container)
+                .setNegativeButton("انصراف", null)
+                .create();
+
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= visibleApps.size()) return;
+            AppEntry entry = visibleApps.get(position);
+            saveSelection(entry.packageName, entry.label);
+            dialog.dismiss();
+        });
+
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String q = s == null ? "" : s.toString().trim().toLowerCase(Locale.ROOT);
+                visibleApps.clear();
+                for (AppEntry entry : allApps) {
+                    if (q.isEmpty()
+                            || entry.label.toLowerCase(Locale.ROOT).contains(q)
+                            || entry.packageName.toLowerCase(Locale.ROOT).contains(q)) {
+                        visibleApps.add(entry);
+                    }
+                }
+                adapter.clear();
+                adapter.addAll(toDisplayStrings(visibleApps));
+                adapter.notifyDataSetChanged();
+            }
+            @Override public void afterTextChanged(Editable s) {}
+        });
+
+        dialog.show();
+    }
+
+    private List<String> toDisplayStrings(List<AppEntry> apps) {
+        List<String> rows = new ArrayList<>();
+        for (AppEntry app : apps) {
+            rows.add(app.label + "\n" + app.packageName);
+        }
+        return rows;
     }
 
     private void onConnectClicked() {
         if (connected || connecting) {
             Intent stop = new Intent(this, InstaVpnService.class).setAction(InstaVpnService.ACTION_STOP);
             startService(stop);
+            return;
+        }
+
+        if (selectedPackage.isEmpty()) {
+            detailView.setText("ابتدا برنامه‌ای را که باید از تونل عبور کند انتخاب کن.");
+            showAppPicker();
             return;
         }
 
@@ -152,7 +323,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startTunnel() {
-        Intent start = new Intent(this, InstaVpnService.class).setAction(InstaVpnService.ACTION_START);
+        Intent start = new Intent(this, InstaVpnService.class)
+                .setAction(InstaVpnService.ACTION_START)
+                .putExtra(InstaVpnService.EXTRA_TARGET_PACKAGE, selectedPackage)
+                .putExtra(InstaVpnService.EXTRA_TARGET_LABEL, selectedLabel);
         ContextCompat.startForegroundService(this, start);
     }
 
@@ -170,27 +344,44 @@ public class MainActivity extends AppCompatActivity {
         if (connected) {
             statusView.setText("متصل شد");
             connectButton.setText("قطع اتصال");
-            instagramButton.setEnabled(true);
+            openAppButton.setEnabled(!selectedPackage.isEmpty());
         } else if (connecting) {
             statusView.setText("در حال اتصال…");
             connectButton.setText("لغو");
-            instagramButton.setEnabled(false);
+            openAppButton.setEnabled(false);
         } else {
             statusView.setText("آماده اتصال");
             connectButton.setText("اتصال هوشمند");
-            instagramButton.setEnabled(false);
+            openAppButton.setEnabled(false);
         }
+
+        selectAppButton.setEnabled(!connected && !connecting);
 
         String text = message == null ? "" : message;
         if (latency >= 0) text += "\nتأخیر مسیر: " + latency + " ms";
         detailView.setText(text);
     }
 
-    private void openInstagram() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage("com.instagram.android");
-        if (launch != null) startActivity(launch);
-        else {
-            Intent settings = new Intent(Settings.ACTION_APPLICATION_SETTINGS);
+    private void refreshSelectedAppUi() {
+        if (selectedAppView == null) return;
+        if (selectedPackage.isEmpty()) {
+            selectedAppView.setText("هنوز برنامه‌ای انتخاب نشده است");
+        } else {
+            String label = selectedLabel.isEmpty() ? selectedPackage : selectedLabel;
+            selectedAppView.setText(label + "\n" + selectedPackage);
+        }
+    }
+
+    private void openSelectedApp() {
+        if (selectedPackage.isEmpty()) return;
+        Intent launch = getPackageManager().getLaunchIntentForPackage(selectedPackage);
+        if (launch != null) {
+            startActivity(launch);
+        } else {
+            Intent settings = new Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + selectedPackage)
+            );
             startActivity(settings);
         }
     }
@@ -209,5 +400,15 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         try { unregisterReceiver(statusReceiver); } catch (Exception ignored) {}
+    }
+
+    private static class AppEntry {
+        final String label;
+        final String packageName;
+
+        AppEntry(String label, String packageName) {
+            this.label = label;
+            this.packageName = packageName;
+        }
     }
 }
