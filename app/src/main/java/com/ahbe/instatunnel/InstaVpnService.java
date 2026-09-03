@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.VpnService;
 import android.os.Build;
@@ -24,9 +25,16 @@ public class InstaVpnService extends VpnService {
     public static final String ACTION_START = "com.ahbe.instatunnel.START";
     public static final String ACTION_STOP = "com.ahbe.instatunnel.STOP";
     public static final String ACTION_STATUS = "com.ahbe.instatunnel.STATUS";
+
     public static final String EXTRA_STATE = "state";
     public static final String EXTRA_MESSAGE = "message";
     public static final String EXTRA_LATENCY = "latency";
+    public static final String EXTRA_TARGET_PACKAGE = "target_package";
+    public static final String EXTRA_TARGET_LABEL = "target_label";
+
+    public static final String PREFS_NAME = "instatunnel_prefs";
+    public static final String PREF_TARGET_PACKAGE = "target_package";
+    public static final String PREF_TARGET_LABEL = "target_label";
 
     private static final String CHANNEL_ID = "instatunnel_vpn";
     private static final int NOTIFICATION_ID = 41;
@@ -36,6 +44,8 @@ public class InstaVpnService extends VpnService {
     private volatile boolean starting;
     private ParcelFileDescriptor vpnInterface;
     private HevSocks5Tunnel tunnel;
+    private String targetPackage = "";
+    private String targetLabel = "";
 
     @Override
     public void onCreate() {
@@ -51,20 +61,50 @@ public class InstaVpnService extends VpnService {
             return START_NOT_STICKY;
         }
 
+        readTarget(intent);
+
         if (!starting && tunnel == null) {
             startForeground(NOTIFICATION_ID, buildNotification("در حال پیدا کردن مسیر سالم…", false));
             starting = true;
             stopping = false;
-            sendStatus("connecting", "در حال جستجوی مسیر سالم برای Instagram…", -1);
+            sendStatus("connecting", "در حال جستجوی مسیر سالم برای " + displayTarget() + "…", -1);
             worker.execute(this::connectInBackground);
         }
         return START_STICKY;
     }
 
+    private void readTarget(Intent intent) {
+        String requestedPackage = intent == null ? null : intent.getStringExtra(EXTRA_TARGET_PACKAGE);
+        String requestedLabel = intent == null ? null : intent.getStringExtra(EXTRA_TARGET_LABEL);
+
+        if (requestedPackage != null && !requestedPackage.trim().isEmpty()) {
+            targetPackage = requestedPackage.trim();
+            targetLabel = requestedLabel == null || requestedLabel.trim().isEmpty()
+                    ? targetPackage
+                    : requestedLabel.trim();
+
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putString(PREF_TARGET_PACKAGE, targetPackage)
+                    .putString(PREF_TARGET_LABEL, targetLabel)
+                    .apply();
+            return;
+        }
+
+        if (targetPackage.isEmpty()) {
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            targetPackage = prefs.getString(PREF_TARGET_PACKAGE, "");
+            targetLabel = prefs.getString(PREF_TARGET_LABEL, "");
+        }
+    }
+
     private void connectInBackground() {
         try {
-            if (!isInstagramInstalled()) {
-                throw new Exception("برنامه Instagram روی گوشی نصب نیست.");
+            if (targetPackage.isEmpty()) {
+                throw new Exception("هیچ برنامه‌ای برای عبور از تونل انتخاب نشده است.");
+            }
+            if (!isTargetInstalled()) {
+                throw new Exception("برنامه انتخاب‌شده روی گوشی نصب نیست: " + targetPackage);
             }
 
             ProxyDiscovery.ProxyNode node = ProxyDiscovery.findBest(message -> {
@@ -72,12 +112,20 @@ public class InstaVpnService extends VpnService {
             });
             if (stopping) return;
 
-            sendStatus("connecting", "مسیر " + node + " انتخاب شد؛ در حال ساخت VPN…", node.latencyMs);
+            sendStatus(
+                    "connecting",
+                    "مسیر " + node + " انتخاب شد؛ در حال ساخت VPN برای " + displayTarget() + "…",
+                    node.latencyMs
+            );
             establishVpn(node);
             if (stopping) return;
 
-            updateNotification("Instagram از تونل عبور می‌کند", true);
-            sendStatus("connected", "اتصال برقرار شد. فقط ترافیک Instagram وارد تونل می‌شود.", node.latencyMs);
+            updateNotification(displayTarget() + " از تونل عبور می‌کند", true);
+            sendStatus(
+                    "connected",
+                    "اتصال برقرار شد. فقط ترافیک " + displayTarget() + " وارد تونل می‌شود.",
+                    node.latencyMs
+            );
         } catch (Exception e) {
             cleanup();
             starting = false;
@@ -88,13 +136,19 @@ public class InstaVpnService extends VpnService {
         }
     }
 
-    private boolean isInstagramInstalled() {
+    private boolean isTargetInstalled() {
         try {
-            getPackageManager().getApplicationInfo("com.instagram.android", 0);
+            getPackageManager().getApplicationInfo(targetPackage, 0);
             return true;
         } catch (PackageManager.NameNotFoundException e) {
             return false;
         }
+    }
+
+    private String displayTarget() {
+        if (targetLabel != null && !targetLabel.trim().isEmpty()) return targetLabel.trim();
+        if (targetPackage != null && !targetPackage.trim().isEmpty()) return targetPackage.trim();
+        return "برنامه انتخاب‌شده";
     }
 
     private void establishVpn(ProxyDiscovery.ProxyNode node) throws Exception {
@@ -108,7 +162,7 @@ public class InstaVpnService extends VpnService {
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8");
 
-        builder.addAllowedApplication("com.instagram.android");
+        builder.addAllowedApplication(targetPackage);
         if (Build.VERSION.SDK_INT >= 29) {
             builder.setMetered(false);
             builder.setBlocking(true);
@@ -180,7 +234,7 @@ public class InstaVpnService extends VpnService {
                     "اتصال InstaTunnel",
                     NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("وضعیت اتصال VPN مخصوص Instagram");
+            channel.setDescription("وضعیت اتصال تونل برنامه انتخاب‌شده");
             NotificationManager nm = getSystemService(NotificationManager.class);
             nm.createNotificationChannel(channel);
         }
