@@ -35,19 +35,21 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView statusView;
     private TextView detailView;
-    private TextView selectedLabelView;
-    private TextView selectedPackageView;
     private TextView routeChipView;
     private TextView orbIconView;
+    private TextView selectedLabelView;
+    private TextView selectedPackageView;
+    private TextView profileNameView;
+    private TextView profileTypeView;
     private ImageView selectedIconView;
     private Button connectButton;
-    private Button selectAppButton;
     private Button openAppButton;
 
     private boolean connected;
     private boolean connecting;
     private String selectedPackage = "";
     private String selectedLabel = "";
+    private boolean receiverRegistered;
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
@@ -65,8 +67,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(Color.rgb(8, 13, 26));
-        getWindow().setNavigationBarColor(Color.rgb(8, 13, 26));
+        getWindow().setStatusBarColor(Color.rgb(7, 11, 23));
+        getWindow().setNavigationBarColor(Color.rgb(7, 11, 23));
         getWindow().getDecorView().setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
         loadSelection();
@@ -74,10 +76,18 @@ public class MainActivity extends AppCompatActivity {
 
         IntentFilter filter = new IntentFilter(InstaVpnService.ACTION_STATUS);
         ContextCompat.registerReceiver(this, statusReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+        receiverRegistered = true;
 
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 50);
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshSelectedAppUi();
+        refreshProfileUi();
     }
 
     private void loadSelection() {
@@ -126,185 +136,167 @@ public class MainActivity extends AppCompatActivity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(26), dp(18), dp(28));
+        root.setPadding(dp(18), dp(24), dp(18), dp(28));
         scroll.addView(root, new ScrollView.LayoutParams(-1, -2));
 
         LinearLayout brandRow = new LinearLayout(this);
         brandRow.setOrientation(LinearLayout.HORIZONTAL);
         brandRow.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(brandRow, lp(-1, -2, 0, 0, 0, 18));
+        root.addView(brandRow, lp(-1, -2, 0, 0, 0, 16));
 
         LinearLayout brandText = new LinearLayout(this);
         brandText.setOrientation(LinearLayout.VERTICAL);
         brandRow.addView(brandText, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        TextView title = new TextView(this);
-        title.setText("InstaTunnel");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(30);
-        title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        TextView title = text("InstaTunnel", 29, Color.WHITE, true);
         brandText.addView(title);
-
-        TextView subtitle = new TextView(this);
-        subtitle.setText("VPN انتخابی برای یک برنامه مشخص");
-        subtitle.setTextColor(Color.rgb(139, 151, 178));
-        subtitle.setTextSize(14);
+        TextView subtitle = text("تونل انتخابی برای هر برنامه", 13, Color.rgb(137, 150, 178), false);
         brandText.addView(subtitle);
 
-        TextView versionChip = new TextView(this);
-        versionChip.setText("v0.3");
-        versionChip.setTextColor(Color.rgb(187, 198, 255));
-        versionChip.setTextSize(12);
+        TextView versionChip = text("v0.4", 12, Color.rgb(195, 202, 255), true);
         versionChip.setGravity(Gravity.CENTER);
-        versionChip.setBackground(roundRect(Color.rgb(29, 36, 67), 16, Color.rgb(78, 94, 151), 1));
+        versionChip.setBackground(roundRect(Color.rgb(30, 37, 68), 16, Color.rgb(74, 86, 145), 1));
         brandRow.addView(versionChip, new LinearLayout.LayoutParams(dp(62), dp(34)));
 
         LinearLayout hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setGravity(Gravity.CENTER_HORIZONTAL);
-        hero.setPadding(dp(18), dp(22), dp(18), dp(22));
-        hero.setBackground(roundRect(Color.rgb(16, 24, 43), 28, Color.rgb(34, 48, 77), 1));
-        hero.setElevation(dp(8));
+        hero.setPadding(dp(18), dp(20), dp(18), dp(20));
+        hero.setBackground(roundRect(Color.rgb(15, 23, 42), 27, Color.rgb(35, 48, 77), 1));
+        hero.setElevation(dp(7));
         root.addView(hero, lp(-1, -2, 0, 0, 0, 16));
 
         FrameLayout orb = new FrameLayout(this);
-        orb.setBackground(circleDrawable(Color.rgb(21, 31, 57), Color.rgb(63, 81, 181), 2));
-        hero.addView(orb, new LinearLayout.LayoutParams(dp(126), dp(126)));
+        orb.setBackground(circleDrawable(Color.rgb(21, 31, 58), Color.rgb(81, 88, 214), 2));
+        hero.addView(orb, new LinearLayout.LayoutParams(dp(116), dp(116)));
 
-        orbIconView = new TextView(this);
-        orbIconView.setText("⚡");
-        orbIconView.setTextSize(42);
-        orbIconView.setTextColor(Color.rgb(163, 175, 255));
+        orbIconView = text("⚡", 41, Color.rgb(170, 180, 255), true);
         orbIconView.setGravity(Gravity.CENTER);
         orb.addView(orbIconView, new FrameLayout.LayoutParams(-1, -1));
 
-        statusView = new TextView(this);
-        statusView.setText("آماده اتصال");
-        statusView.setTextColor(Color.WHITE);
-        statusView.setTextSize(25);
+        statusView = text("آماده اتصال", 24, Color.WHITE, true);
         statusView.setGravity(Gravity.CENTER);
-        statusView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        hero.addView(statusView, lp(-1, -2, 0, 16, 0, 6));
+        hero.addView(statusView, lp(-1, -2, 0, 14, 0, 5));
 
-        detailView = new TextView(this);
-        detailView.setText("برنامه هدف را انتخاب کن؛ مسیر سالم به‌صورت خودکار بررسی می‌شود.");
-        detailView.setTextColor(Color.rgb(155, 165, 188));
-        detailView.setTextSize(14);
+        detailView = text("یک کانفیگ یا ساب اضافه کن و برنامه هدف را انتخاب کن.", 13, Color.rgb(154, 166, 191), false);
         detailView.setGravity(Gravity.CENTER);
-        detailView.setLineSpacing(dp(2), 1.2f);
-        hero.addView(detailView, lp(-1, -2, 6, 0, 6, 12));
+        detailView.setLineSpacing(dp(2), 1.18f);
+        hero.addView(detailView, lp(-1, -2, 6, 0, 6, 11));
 
-        routeChipView = new TextView(this);
-        routeChipView.setText("●  مسیر خودکار");
-        routeChipView.setTextColor(Color.rgb(129, 226, 199));
-        routeChipView.setTextSize(12);
+        routeChipView = text("●  بدون کانفیگ", 11, Color.rgb(255, 188, 128), true);
         routeChipView.setGravity(Gravity.CENTER);
-        routeChipView.setBackground(roundRect(Color.rgb(17, 48, 49), 15, Color.rgb(36, 91, 82), 1));
-        hero.addView(routeChipView, new LinearLayout.LayoutParams(dp(130), dp(32)));
+        routeChipView.setPadding(dp(12), 0, dp(12), 0);
+        routeChipView.setBackground(roundRect(Color.rgb(57, 39, 28), 14, Color.rgb(100, 67, 42), 1));
+        hero.addView(routeChipView, new LinearLayout.LayoutParams(-2, dp(31)));
 
-        TextView section = new TextView(this);
-        section.setText("برنامه هدف");
-        section.setTextColor(Color.rgb(176, 187, 211));
-        section.setTextSize(13);
-        section.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        root.addView(section, lp(-1, -2, 4, 0, 4, 8));
+        root.addView(sectionTitle("مسیر اتصال"), lp(-1, -2, 4, 0, 4, 8));
+        LinearLayout profileCard = new LinearLayout(this);
+        profileCard.setOrientation(LinearLayout.HORIZONTAL);
+        profileCard.setGravity(Gravity.CENTER_VERTICAL);
+        profileCard.setPadding(dp(14), dp(13), dp(14), dp(13));
+        profileCard.setBackground(roundRect(Color.rgb(13, 21, 38), 21, Color.rgb(31, 44, 71), 1));
+        profileCard.setOnClickListener(v -> openConfigManager());
+        root.addView(profileCard, lp(-1, -2, 0, 0, 0, 10));
 
+        TextView routeIcon = text("⇄", 25, Color.rgb(157, 169, 255), true);
+        routeIcon.setGravity(Gravity.CENTER);
+        routeIcon.setBackground(roundRect(Color.rgb(30, 37, 66), 16, Color.rgb(54, 65, 108), 1));
+        profileCard.addView(routeIcon, new LinearLayout.LayoutParams(dp(55), dp(55)));
+
+        LinearLayout profileText = new LinearLayout(this);
+        profileText.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams profileTextLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        profileTextLp.setMargins(dp(12), 0, dp(10), 0);
+        profileCard.addView(profileText, profileTextLp);
+
+        profileNameView = text("هیچ کانفیگی انتخاب نشده", 15, Color.WHITE, true);
+        profileNameView.setSingleLine(true);
+        profileText.addView(profileNameView);
+        profileTypeView = text("برای افزودن کانفیگ یا ساب لمس کن", 11, Color.rgb(111, 126, 156), false);
+        profileText.addView(profileTypeView, lp(-1, -2, 0, 3, 0, 0));
+
+        TextView profileArrow = text("‹", 32, Color.rgb(142, 157, 190), false);
+        profileArrow.setGravity(Gravity.CENTER);
+        profileCard.addView(profileArrow, new LinearLayout.LayoutParams(dp(30), dp(45)));
+
+        Button configButton = actionButton("کانفیگ و اشتراک (ساب)", false);
+        configButton.setOnClickListener(v -> openConfigManager());
+        root.addView(configButton, lp(-1, dp(52), 0, 0, 0, 16));
+
+        root.addView(sectionTitle("برنامه هدف"), lp(-1, -2, 4, 0, 4, 8));
         LinearLayout appCard = new LinearLayout(this);
         appCard.setOrientation(LinearLayout.HORIZONTAL);
         appCard.setGravity(Gravity.CENTER_VERTICAL);
-        appCard.setPadding(dp(14), dp(14), dp(14), dp(14));
-        appCard.setBackground(roundRect(Color.rgb(15, 23, 41), 22, Color.rgb(31, 45, 72), 1));
-        appCard.setElevation(dp(4));
+        appCard.setPadding(dp(14), dp(13), dp(14), dp(13));
+        appCard.setBackground(roundRect(Color.rgb(13, 21, 38), 21, Color.rgb(31, 44, 71), 1));
         appCard.setOnClickListener(v -> openAppPicker());
-        root.addView(appCard, lp(-1, -2, 0, 0, 0, 14));
+        root.addView(appCard, lp(-1, -2, 0, 0, 0, 10));
 
         FrameLayout iconWrap = new FrameLayout(this);
-        iconWrap.setPadding(dp(6), dp(6), dp(6), dp(6));
-        iconWrap.setBackground(roundRect(Color.rgb(26, 36, 60), 18, Color.rgb(42, 58, 90), 1));
-        appCard.addView(iconWrap, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        iconWrap.setPadding(dp(5), dp(5), dp(5), dp(5));
+        iconWrap.setBackground(roundRect(Color.rgb(28, 37, 61), 16, Color.rgb(48, 61, 94), 1));
+        appCard.addView(iconWrap, new LinearLayout.LayoutParams(dp(58), dp(58)));
 
         selectedIconView = new ImageView(this);
-        selectedIconView.setImageResource(android.R.drawable.sym_def_app_icon);
         selectedIconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        selectedIconView.setImageResource(android.R.drawable.sym_def_app_icon);
         iconWrap.addView(selectedIconView, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout appText = new LinearLayout(this);
         appText.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams appTextLp = new LinearLayout.LayoutParams(0, -2, 1f);
-        appTextLp.setMargins(dp(12), 0, dp(12), 0);
+        appTextLp.setMargins(dp(12), 0, dp(10), 0);
         appCard.addView(appText, appTextLp);
 
-        selectedLabelView = new TextView(this);
-        selectedLabelView.setTextColor(Color.WHITE);
-        selectedLabelView.setTextSize(17);
-        selectedLabelView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        selectedLabelView = text("انتخاب برنامه", 15, Color.WHITE, true);
         appText.addView(selectedLabelView);
-
-        selectedPackageView = new TextView(this);
-        selectedPackageView.setTextColor(Color.rgb(125, 137, 163));
-        selectedPackageView.setTextSize(12);
+        selectedPackageView = text("", 11, Color.rgb(111, 126, 156), false);
         selectedPackageView.setSingleLine(true);
-        appText.addView(selectedPackageView);
+        appText.addView(selectedPackageView, lp(-1, -2, 0, 3, 0, 0));
 
-        TextView arrow = new TextView(this);
-        arrow.setText("‹");
-        arrow.setTextColor(Color.rgb(149, 162, 193));
-        arrow.setTextSize(34);
-        arrow.setGravity(Gravity.CENTER);
-        appCard.addView(arrow, new LinearLayout.LayoutParams(dp(36), dp(48)));
+        TextView appArrow = text("‹", 32, Color.rgb(142, 157, 190), false);
+        appArrow.setGravity(Gravity.CENTER);
+        appCard.addView(appArrow, new LinearLayout.LayoutParams(dp(30), dp(45)));
 
-        selectAppButton = new Button(this);
-        selectAppButton.setText("انتخاب یا تغییر برنامه");
-        selectAppButton.setAllCaps(false);
-        selectAppButton.setTextSize(15);
-        selectAppButton.setTextColor(Color.rgb(203, 210, 255));
-        selectAppButton.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        selectAppButton.setBackground(roundRect(Color.rgb(28, 35, 65), 18, Color.rgb(74, 87, 145), 1));
+        Button selectAppButton = actionButton("انتخاب یا تغییر برنامه", false);
         selectAppButton.setOnClickListener(v -> openAppPicker());
-        root.addView(selectAppButton, lp(-1, dp(52), 0, 0, 0, 14));
+        root.addView(selectAppButton, lp(-1, dp(52), 0, 0, 0, 16));
 
-        connectButton = new Button(this);
-        connectButton.setText("اتصال هوشمند");
-        connectButton.setAllCaps(false);
+        connectButton = actionButton("اتصال", true);
         connectButton.setTextSize(18);
-        connectButton.setTextColor(Color.WHITE);
-        connectButton.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        connectButton.setBackground(connectGradient());
         connectButton.setOnClickListener(v -> onConnectClicked());
-        root.addView(connectButton, lp(-1, dp(62), 0, 0, 0, 10));
+        root.addView(connectButton, lp(-1, dp(62), 0, 0, 0, 9));
 
-        openAppButton = new Button(this);
-        openAppButton.setText("باز کردن برنامه انتخاب‌شده");
-        openAppButton.setAllCaps(false);
-        openAppButton.setTextSize(14);
-        openAppButton.setTextColor(Color.rgb(182, 193, 220));
-        openAppButton.setBackground(roundRect(Color.rgb(14, 21, 38), 18, Color.rgb(37, 50, 78), 1));
+        openAppButton = actionButton("باز کردن برنامه انتخاب‌شده", false);
         openAppButton.setEnabled(false);
         openAppButton.setOnClickListener(v -> openSelectedApp());
-        root.addView(openAppButton, lp(-1, dp(50), 0, 0, 0, 18));
+        root.addView(openAppButton, lp(-1, dp(50), 0, 0, 0, 16));
 
         LinearLayout infoCard = new LinearLayout(this);
         infoCard.setOrientation(LinearLayout.VERTICAL);
-        infoCard.setPadding(dp(16), dp(15), dp(16), dp(15));
-        infoCard.setBackground(roundRect(Color.rgb(12, 19, 34), 20, Color.rgb(29, 42, 68), 1));
+        infoCard.setPadding(dp(15), dp(14), dp(15), dp(14));
+        infoCard.setBackground(roundRect(Color.rgb(10, 17, 31), 19, Color.rgb(27, 39, 63), 1));
         root.addView(infoCard, lp(-1, -2, 0, 0, 0, 0));
-
-        TextView infoTitle = new TextView(this);
-        infoTitle.setText("حالت اتصال");
-        infoTitle.setTextColor(Color.WHITE);
-        infoTitle.setTextSize(14);
-        infoTitle.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        infoCard.addView(infoTitle);
-
-        TextView info = new TextView(this);
-        info.setText("فقط ترافیک برنامه‌ای که انتخاب می‌کنی وارد تونل می‌شود. قبل از اتصال، پراکسی با یک اتصال واقعی TLS بررسی می‌شود. DNS نیز داخل تونل نگه داشته می‌شود.");
-        info.setTextColor(Color.rgb(132, 145, 171));
-        info.setTextSize(13);
-        info.setLineSpacing(dp(3), 1.18f);
-        infoCard.addView(info, lp(-1, -2, 0, 8, 0, 0));
+        infoCard.addView(text("اتصال واقعی با Xray", 14, Color.WHITE, true));
+        TextView info = text("کانفیگ انتخاب‌شده ابتدا داخل Xray اجرا و با یک اتصال SOCKS واقعی به Instagram آزمایش می‌شود؛ سپس فقط برنامه انتخاب‌شده وارد VPN می‌شود.", 12, Color.rgb(127, 141, 170), false);
+        info.setLineSpacing(dp(3), 1.16f);
+        infoCard.addView(info, lp(-1, -2, 0, 6, 0, 0));
 
         refreshSelectedAppUi();
+        refreshProfileUi();
         return shell;
+    }
+
+    private TextView sectionTitle(String value) {
+        return text(value, 13, Color.rgb(179, 190, 215), true);
+    }
+
+    private void openConfigManager() {
+        if (connected || connecting) {
+            detailView.setText("برای تغییر کانفیگ ابتدا اتصال را قطع کن.");
+            return;
+        }
+        startActivity(new Intent(this, ConfigManagerActivity.class));
     }
 
     private void openAppPicker() {
@@ -319,28 +311,30 @@ public class MainActivity extends AppCompatActivity {
 
     private void onConnectClicked() {
         if (connected || connecting) {
-            Intent stop = new Intent(this, InstaVpnService.class).setAction(InstaVpnService.ACTION_STOP);
-            startService(stop);
+            startService(new Intent(this, InstaVpnService.class).setAction(InstaVpnService.ACTION_STOP));
+            return;
+        }
+
+        if (ProfileManager.getSelected(this) == null) {
+            detailView.setText("اول یک کانفیگ یا ساب اضافه و یک کانفیگ را انتخاب کن.");
+            openConfigManager();
             return;
         }
 
         if (selectedPackage.isEmpty()) {
-            detailView.setText("اول برنامه‌ای را که باید از تونل عبور کند انتخاب کن.");
+            detailView.setText("اول برنامه هدف را انتخاب کن.");
             openAppPicker();
             return;
         }
 
         Intent permission = VpnService.prepare(this);
-        if (permission != null) {
-            startActivityForResult(permission, VPN_REQUEST);
-        } else {
-            startTunnel();
-        }
+        if (permission != null) startActivityForResult(permission, VPN_REQUEST);
+        else startTunnel();
     }
 
     private void startTunnel() {
         connecting = true;
-        updateUi("در حال آماده‌سازی موتور VPN…", -1, "connecting");
+        updateUi("در حال راه‌اندازی Xray…", -1, "connecting");
         Intent start = new Intent(this, InstaVpnService.class)
                 .setAction(InstaVpnService.ACTION_START)
                 .putExtra(InstaVpnService.EXTRA_TARGET_PACKAGE, selectedPackage)
@@ -348,87 +342,44 @@ public class MainActivity extends AppCompatActivity {
         ContextCompat.startForegroundService(this, start);
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == APP_PICKER_REQUEST && resultCode == Activity.RESULT_OK && data != null) {
-            String pkg = data.getStringExtra(AppPickerActivity.EXTRA_PACKAGE);
-            String label = data.getStringExtra(AppPickerActivity.EXTRA_LABEL);
-            if (pkg != null && !pkg.trim().isEmpty()) {
-                saveSelection(pkg, label);
-                detailView.setText("برنامه انتخاب شد. حالا اتصال هوشمند را بزن.");
-            }
-            return;
-        }
-
-        if (requestCode == VPN_REQUEST && resultCode == Activity.RESULT_OK) {
-            startTunnel();
-        } else if (requestCode == VPN_REQUEST) {
-            connecting = false;
-            updateUi("مجوز VPN داده نشد.", -1, "error");
-        }
-    }
-
-    private void updateUi(String message, int latency, String state) {
-        if (connected) {
-            statusView.setText("متصل شد");
-            statusView.setTextColor(Color.rgb(123, 228, 197));
-            orbIconView.setText("✓");
-            orbIconView.setTextColor(Color.rgb(123, 228, 197));
-            routeChipView.setText("●  تونل فعال");
-            connectButton.setText("قطع اتصال");
-            connectButton.setBackground(disconnectGradient());
-            openAppButton.setEnabled(!selectedPackage.isEmpty());
-            openAppButton.setAlpha(1f);
-        } else if (connecting) {
-            statusView.setText("در حال اتصال…");
-            statusView.setTextColor(Color.rgb(183, 193, 255));
-            orbIconView.setText("…");
-            orbIconView.setTextColor(Color.rgb(183, 193, 255));
-            routeChipView.setText("●  در حال بررسی مسیر");
-            connectButton.setText("لغو اتصال");
-            connectButton.setBackground(disconnectGradient());
-            openAppButton.setEnabled(false);
-            openAppButton.setAlpha(.45f);
+    private void refreshProfileUi() {
+        if (profileNameView == null || profileTypeView == null || routeChipView == null) return;
+        ProfileManager.Profile p = ProfileManager.getSelected(this);
+        if (p == null) {
+            profileNameView.setText("هیچ کانفیگی انتخاب نشده");
+            profileTypeView.setText("برای افزودن کانفیگ یا ساب لمس کن");
+            routeChipView.setText("●  بدون کانفیگ");
+            routeChipView.setTextColor(Color.rgb(255, 188, 128));
+            routeChipView.setBackground(roundRect(Color.rgb(57, 39, 28), 14, Color.rgb(100, 67, 42), 1));
         } else {
-            statusView.setText("آماده اتصال");
-            statusView.setTextColor("error".equals(state) ? Color.rgb(255, 142, 142) : Color.WHITE);
-            orbIconView.setText("error".equals(state) ? "!" : "⚡");
-            orbIconView.setTextColor("error".equals(state) ? Color.rgb(255, 142, 142) : Color.rgb(163, 175, 255));
-            routeChipView.setText("error".equals(state) ? "●  مسیر ناموفق" : "●  مسیر خودکار");
-            connectButton.setText("دوباره تلاش کن".equals(message) ? "دوباره تلاش کن" : "اتصال هوشمند");
-            connectButton.setBackground(connectGradient());
-            openAppButton.setEnabled(false);
-            openAppButton.setAlpha(.45f);
+            profileNameView.setText(p.name);
+            profileTypeView.setText(p.displayType() + " • آماده استفاده");
+            if (!connected && !connecting) {
+                routeChipView.setText("●  " + p.displayType());
+                routeChipView.setTextColor(Color.rgb(133, 231, 201));
+                routeChipView.setBackground(roundRect(Color.rgb(17, 49, 48), 14, Color.rgb(38, 91, 82), 1));
+            }
         }
-
-        selectAppButton.setEnabled(!connected && !connecting);
-        selectAppButton.setAlpha(selectAppButton.isEnabled() ? 1f : .45f);
-
-        String text = message == null ? "" : message;
-        if (latency >= 0) text += "\nتأخیر مسیر تاییدشده: " + latency + " ms";
-        detailView.setText(text);
     }
 
     private void refreshSelectedAppUi() {
         if (selectedLabelView == null || selectedPackageView == null || selectedIconView == null) return;
-
         if (selectedPackage.isEmpty()) {
-            selectedLabelView.setText("هنوز برنامه‌ای انتخاب نشده");
-            selectedPackageView.setText("برای انتخاب این کارت را لمس کن");
+            selectedLabelView.setText("انتخاب برنامه");
+            selectedPackageView.setText("برای انتخاب لمس کن");
             selectedIconView.setImageResource(android.R.drawable.sym_def_app_icon);
             return;
         }
-
-        String label = selectedLabel.isEmpty() ? selectedPackage : selectedLabel;
-        selectedLabelView.setText(label);
-        selectedPackageView.setText(selectedPackage);
         try {
-            Drawable icon = getPackageManager().getApplicationIcon(selectedPackage);
+            ApplicationInfo app = getPackageManager().getApplicationInfo(selectedPackage, 0);
+            CharSequence label = app.loadLabel(getPackageManager());
+            Drawable icon = app.loadIcon(getPackageManager());
+            selectedLabelView.setText(label == null ? selectedLabel : label.toString());
+            selectedPackageView.setText(selectedPackage);
             selectedIconView.setImageDrawable(icon);
         } catch (PackageManager.NameNotFoundException e) {
-            selectedIconView.setImageResource(android.R.drawable.sym_def_app_icon);
+            selectedLabelView.setText(selectedLabel.isEmpty() ? selectedPackage : selectedLabel);
+            selectedPackageView.setText(selectedPackage);
         }
     }
 
@@ -436,47 +387,117 @@ public class MainActivity extends AppCompatActivity {
         if (selectedPackage.isEmpty()) return;
         Intent launch = getPackageManager().getLaunchIntentForPackage(selectedPackage);
         if (launch != null) startActivity(launch);
+        else detailView.setText("این برنامه اکتیویتی قابل اجرا ندارد.");
     }
 
-    private Drawable backgroundGradient() {
-        return new GradientDrawable(
+    private void updateUi(String message, int latency, String state) {
+        if (statusView == null) return;
+        if (message != null && !message.trim().isEmpty()) detailView.setText(message);
+
+        if ("connected".equals(state)) {
+            statusView.setText("متصل");
+            orbIconView.setText("✓");
+            orbIconView.setTextColor(Color.rgb(125, 235, 200));
+            connectButton.setText("قطع اتصال");
+            openAppButton.setEnabled(true);
+            routeChipView.setText(latency >= 0 ? "●  " + latency + " ms" : "●  متصل");
+            routeChipView.setTextColor(Color.rgb(125, 235, 200));
+            routeChipView.setBackground(roundRect(Color.rgb(17, 55, 49), 14, Color.rgb(39, 104, 88), 1));
+        } else if ("connecting".equals(state)) {
+            statusView.setText("در حال اتصال…");
+            orbIconView.setText("…");
+            orbIconView.setTextColor(Color.rgb(177, 185, 255));
+            connectButton.setText("لغو اتصال");
+            openAppButton.setEnabled(false);
+            routeChipView.setText("●  در حال بررسی");
+            routeChipView.setTextColor(Color.rgb(255, 211, 138));
+        } else if ("error".equals(state)) {
+            connected = false;
+            connecting = false;
+            statusView.setText("اتصال ناموفق");
+            orbIconView.setText("!");
+            orbIconView.setTextColor(Color.rgb(255, 132, 145));
+            connectButton.setText("تلاش دوباره");
+            openAppButton.setEnabled(false);
+            routeChipView.setText("●  خطای کانفیگ");
+            routeChipView.setTextColor(Color.rgb(255, 146, 154));
+            routeChipView.setBackground(roundRect(Color.rgb(61, 31, 38), 14, Color.rgb(108, 49, 60), 1));
+        } else {
+            connected = false;
+            connecting = false;
+            statusView.setText("آماده اتصال");
+            orbIconView.setText("⚡");
+            orbIconView.setTextColor(Color.rgb(170, 180, 255));
+            connectButton.setText("اتصال");
+            openAppButton.setEnabled(false);
+            refreshProfileUi();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == VPN_REQUEST) {
+            if (resultCode == Activity.RESULT_OK) startTunnel();
+            else updateUi("مجوز VPN صادر نشد.", -1, "error");
+            return;
+        }
+        if (requestCode == APP_PICKER_REQUEST && resultCode == Activity.RESULT_OK && data != null) {
+            String pkg = data.getStringExtra(AppPickerActivity.EXTRA_SELECTED_PACKAGE);
+            String label = data.getStringExtra(AppPickerActivity.EXTRA_SELECTED_LABEL);
+            if (pkg != null && !pkg.trim().isEmpty()) saveSelection(pkg, label);
+        }
+    }
+
+    private Button actionButton(String label, boolean primary) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextSize(14);
+        b.setTextColor(Color.WHITE);
+        b.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        b.setBackground(primary ? connectGradient() : roundRect(Color.rgb(27, 35, 63), 17, Color.rgb(68, 80, 133), 1));
+        return b;
+    }
+
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        if (bold) t.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        return t;
+    }
+
+    private GradientDrawable backgroundGradient() {
+        GradientDrawable d = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.rgb(8, 13, 26), Color.rgb(10, 18, 36), Color.rgb(7, 11, 22)}
-        );
+                new int[]{Color.rgb(7, 11, 23), Color.rgb(9, 16, 31), Color.rgb(10, 14, 28)});
+        return d;
     }
 
-    private Drawable connectGradient() {
-        GradientDrawable gd = new GradientDrawable(
+    private GradientDrawable connectGradient() {
+        GradientDrawable d = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Color.rgb(92, 91, 230), Color.rgb(76, 131, 255)}
-        );
-        gd.setCornerRadius(dp(20));
-        return gd;
+                new int[]{Color.rgb(88, 73, 220), Color.rgb(70, 91, 221)});
+        d.setCornerRadius(dp(19));
+        return d;
     }
 
-    private Drawable disconnectGradient() {
-        GradientDrawable gd = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Color.rgb(161, 67, 87), Color.rgb(205, 76, 93)}
-        );
-        gd.setCornerRadius(dp(20));
-        return gd;
+    private GradientDrawable roundRect(int color, int radiusDp, int strokeColor, int strokeWidthDp) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radiusDp));
+        if (strokeWidthDp > 0) d.setStroke(dp(strokeWidthDp), strokeColor);
+        return d;
     }
 
-    private Drawable circleDrawable(int fill, int stroke, int strokeDp) {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setShape(GradientDrawable.OVAL);
-        gd.setColor(fill);
-        gd.setStroke(dp(strokeDp), stroke);
-        return gd;
-    }
-
-    private Drawable roundRect(int fill, int radiusDp, int stroke, int strokeDp) {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(fill);
-        gd.setCornerRadius(dp(radiusDp));
-        if (strokeDp > 0) gd.setStroke(dp(strokeDp), stroke);
-        return gd;
+    private GradientDrawable circleDrawable(int color, int strokeColor, int strokeWidthDp) {
+        GradientDrawable d = new GradientDrawable();
+        d.setShape(GradientDrawable.OVAL);
+        d.setColor(color);
+        d.setStroke(dp(strokeWidthDp), strokeColor);
+        return d;
     }
 
     private LinearLayout.LayoutParams lp(int w, int h, int left, int top, int right, int bottom) {
@@ -491,7 +512,9 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        try { unregisterReceiver(statusReceiver); } catch (Exception ignored) {}
+        if (receiverRegistered) {
+            try { unregisterReceiver(statusReceiver); } catch (Exception ignored) {}
+        }
         super.onDestroy();
     }
 }
