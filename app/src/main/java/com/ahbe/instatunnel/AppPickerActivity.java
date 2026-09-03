@@ -34,6 +34,8 @@ import java.util.concurrent.Executors;
 public class AppPickerActivity extends AppCompatActivity {
     public static final String EXTRA_PACKAGE = "picked_package";
     public static final String EXTRA_LABEL = "picked_label";
+    public static final String EXTRA_SELECTED_PACKAGE = EXTRA_PACKAGE;
+    public static final String EXTRA_SELECTED_LABEL = EXTRA_LABEL;
     public static final String EXTRA_CURRENT_PACKAGE = "current_package";
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
