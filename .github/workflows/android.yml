@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -33,6 +33,15 @@ jobs:
           rm -rf app/src/main/jni/hev-socks5-tunnel
           git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/heiher/hev-socks5-tunnel.git app/src/main/jni/hev-socks5-tunnel
 
+      - name: Fetch Xray Android core
+        run: |
+          mkdir -p app/libs
+          curl -fL --retry 3 \
+            https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.8.20/libv2ray.aar \
+            -o app/libs/libv2ray.aar
+          test -s app/libs/libv2ray.aar
+          ls -lh app/libs/libv2ray.aar
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -43,12 +52,12 @@ jobs:
 
       - name: Prepare APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk InstaTunnel-0.3.0-debug.apk
-          ls -lh InstaTunnel-0.3.0-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk InstaTunnel-0.4.0-debug.apk
+          ls -lh InstaTunnel-0.4.0-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: InstaTunnel-0.3.0-APK
-          path: InstaTunnel-0.3.0-debug.apk
+          name: InstaTunnel-0.4.0-APK
+          path: InstaTunnel-0.4.0-debug.apk
           retention-days: 14
