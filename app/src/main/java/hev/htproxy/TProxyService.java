@@ -1,17 +1,17 @@
 package hev.htproxy;
 
 /**
- * JNI bridge expected by the upstream hev-socks5-tunnel Android native wrapper.
- * The native library registers these exact methods against hev/htproxy/TProxyService.
+ * JNI bridge expected by the official hev-socks5-tunnel Android core.
  */
 public final class TProxyService {
     private TProxyService() {}
 
     static {
-        System.loadLibrary("hev-socks5-tunnel-jni");
+        System.loadLibrary("hev-socks5-tunnel");
     }
 
-    public static native void TProxyStartService(String configPath, int tunFd);
-    public static native void TProxyStopService();
+    public static native boolean TProxyStartService(String configPath, int tunFd);
+    public static native boolean TProxyStopService();
+    public static native boolean TProxyIsRunning();
     public static native long[] TProxyGetStats();
 }
