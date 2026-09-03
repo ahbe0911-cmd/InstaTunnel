@@ -26,13 +26,12 @@ jobs:
       - name: Install Android packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.14206865"
 
-      - name: Fetch tun2socks engine
+      - name: Fetch official tun2socks engine
         run: |
-          mkdir -p third_party
-          git clone --depth 1 https://github.com/zak20090/hev-socks5-tunnel-android.git third_party/hev
-          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/heiher/hev-socks5-tunnel.git third_party/hev-socks5-tunnel
+          rm -rf app/src/main/jni/hev-socks5-tunnel
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/heiher/hev-socks5-tunnel.git app/src/main/jni/hev-socks5-tunnel
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -40,18 +39,16 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build debug APK
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Prepare APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk InstaTunnel-debug.apk
-          ls -lh InstaTunnel-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk InstaTunnel-0.3.0-debug.apk
+          ls -lh InstaTunnel-0.3.0-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: InstaTunnel-APK
-          path: InstaTunnel-debug.apk
+          name: InstaTunnel-0.3.0-APK
+          path: InstaTunnel-0.3.0-debug.apk
           retention-days: 14
