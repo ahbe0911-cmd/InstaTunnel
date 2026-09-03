@@ -11,8 +11,8 @@ android {
         applicationId 'com.ahbe.instatunnel'
         minSdk 26
         targetSdk 33
-        versionCode 3
-        versionName '0.3.0'
+        versionCode 4
+        versionName '0.4.0'
 
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a'
@@ -56,4 +56,5 @@ configurations.configureEach {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.core:core:1.13.1'
+    implementation files('libs/libv2ray.aar')
 }
