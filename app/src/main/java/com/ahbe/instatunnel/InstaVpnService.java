@@ -38,6 +38,7 @@ public class InstaVpnService extends VpnService {
 
     private static final String CHANNEL_ID = "instatunnel_vpn";
     private static final int NOTIFICATION_ID = 41;
+    private static final String MAPPED_DNS = "198.18.0.2";
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile boolean stopping;
@@ -62,7 +63,6 @@ public class InstaVpnService extends VpnService {
         }
 
         readTarget(intent);
-
         if (!starting && !tunnelStarted) {
             startForeground(NOTIFICATION_ID, buildNotification("در حال پیدا کردن مسیر سالم…", false));
             starting = true;
@@ -114,16 +114,18 @@ public class InstaVpnService extends VpnService {
 
             sendStatus(
                     "connecting",
-                    "مسیر " + node + " انتخاب شد؛ در حال ساخت VPN برای " + displayTarget() + "…",
+                    "مسیر " + node + " با TLS واقعی تایید شد؛ در حال ساخت VPN…",
                     node.latencyMs
             );
+
             establishVpn(node);
             if (stopping) return;
 
             updateNotification(displayTarget() + " از تونل عبور می‌کند", true);
+            String transport = node.udpSupported ? "TCP/UDP" : "TCP";
             sendStatus(
                     "connected",
-                    "اتصال برقرار شد. فقط ترافیک " + displayTarget() + " وارد تونل می‌شود.",
+                    "اتصال برقرار شد. فقط ترافیک " + displayTarget() + " وارد تونل می‌شود. مسیر تاییدشده: " + transport,
                     node.latencyMs
             );
         } catch (Throwable e) {
@@ -153,47 +155,58 @@ public class InstaVpnService extends VpnService {
 
     private void establishVpn(ProxyDiscovery.ProxyNode node) throws Exception {
         Builder builder = new Builder()
-                .setSession("InstaTunnel")
-                .setMtu(1500)
+                .setSession("InstaTunnel/per-App")
+                .setBlocking(false)
+                .setMtu(1400)
                 .addAddress("198.18.0.1", 32)
                 .addRoute("0.0.0.0", 0)
                 .addAddress("fd00:1:fd00:1::1", 64)
                 .addRoute("::", 0)
-                .addDnsServer("1.1.1.1")
-                .addDnsServer("8.8.8.8");
+                .addDnsServer(MAPPED_DNS);
 
         builder.addAllowedApplication(targetPackage);
-        if (Build.VERSION.SDK_INT >= 29) {
-            builder.setMetered(false);
-            builder.setBlocking(true);
-        }
+        if (Build.VERSION.SDK_INT >= 29) builder.setMetered(false);
 
         vpnInterface = builder.establish();
         if (vpnInterface == null) throw new Exception("Android نتوانست رابط VPN را ایجاد کند.");
 
         File config = new File(getCacheDir(), "hev-instatunnel.yml");
-        String yaml = "tunnel:\n" +
-                "  name: tun0\n" +
-                "  mtu: 1500\n" +
-                "  ipv4: 198.18.0.1\n" +
-                "  ipv6: 'fd00:1:fd00:1::1'\n" +
-                "socks5:\n" +
-                "  address: " + node.host + "\n" +
-                "  port: " + node.port + "\n" +
-                "  udp: 'udp'\n" +
-                "misc:\n" +
+        String yaml = "misc:\n" +
                 "  task-stack-size: 86016\n" +
                 "  connect-timeout: 7000\n" +
-                "  tcp-read-write-timeout: 60000\n" +
-                "  udp-read-write-timeout: 30000\n" +
-                "  log-level: error\n";
+                "  tcp-read-write-timeout: 300000\n" +
+                "  udp-read-write-timeout: 60000\n" +
+                "  log-level: warn\n" +
+                "tunnel:\n" +
+                "  name: tun0\n" +
+                "  mtu: 1400\n" +
+                "  ipv4: 198.18.0.1\n" +
+                "  ipv6: 'fd00:1:fd00:1::1'\n" +
+                "  icmp: 'reply'\n" +
+                "socks5:\n" +
+                "  address: '" + node.host + "'\n" +
+                "  port: " + node.port + "\n" +
+                "  udp: 'udp'\n" +
+                "mapdns:\n" +
+                "  address: " + MAPPED_DNS + "\n" +
+                "  port: 53\n" +
+                "  network: 240.0.0.0\n" +
+                "  netmask: 240.0.0.0\n" +
+                "  cache-size: 10000\n";
 
         try (FileOutputStream out = new FileOutputStream(config, false)) {
             out.write(yaml.getBytes(StandardCharsets.UTF_8));
             out.flush();
         }
 
-        TProxyService.TProxyStartService(config.getAbsolutePath(), vpnInterface.getFd());
+        boolean started = TProxyService.TProxyStartService(config.getAbsolutePath(), vpnInterface.getFd());
+        if (!started) throw new Exception("موتور TUN نتوانست شروع شود.");
+
+        Thread.sleep(350);
+        if (!TProxyService.TProxyIsRunning()) {
+            throw new Exception("موتور TUN بلافاصله متوقف شد؛ کانفیگ داخلی معتبر نیست.");
+        }
+
         tunnelStarted = true;
         starting = false;
     }
@@ -208,10 +221,14 @@ public class InstaVpnService extends VpnService {
     }
 
     private synchronized void cleanup() {
-        if (tunnelStarted) {
-            try { TProxyService.TProxyStopService(); } catch (Throwable ignored) {}
-            tunnelStarted = false;
+        try {
+            if (tunnelStarted || TProxyService.TProxyIsRunning()) {
+                TProxyService.TProxyStopService();
+            }
+        } catch (Throwable ignored) {
         }
+        tunnelStarted = false;
+
         if (vpnInterface != null) {
             try { vpnInterface.close(); } catch (Exception ignored) {}
             vpnInterface = null;
