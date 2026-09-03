@@ -21,6 +21,11 @@
         android:theme="@style/Theme.InstaTunnel">
 
         <activity
+            android:name=".ConfigManagerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".AppPickerActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
