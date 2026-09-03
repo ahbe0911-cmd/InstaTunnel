@@ -32,6 +32,7 @@ jobs:
         run: |
           mkdir -p third_party
           git clone --depth 1 https://github.com/zak20090/hev-socks5-tunnel-android.git third_party/hev
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/heiher/hev-socks5-tunnel.git third_party/hev-socks5-tunnel
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
