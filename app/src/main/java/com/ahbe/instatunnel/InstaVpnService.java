@@ -15,6 +15,10 @@ import androidx.core.app.NotificationCompat;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -38,6 +42,7 @@ public class InstaVpnService extends VpnService {
 
     private static final String CHANNEL_ID = "instatunnel_vpn";
     private static final int NOTIFICATION_ID = 41;
+    private static final int LOCAL_SOCKS_PORT = 10808;
     private static final String MAPPED_DNS = "198.18.0.2";
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -47,6 +52,7 @@ public class InstaVpnService extends VpnService {
     private ParcelFileDescriptor vpnInterface;
     private String targetPackage = "";
     private String targetLabel = "";
+    private ProfileManager.Profile activeProfile;
 
     @Override
     public void onCreate() {
@@ -64,10 +70,10 @@ public class InstaVpnService extends VpnService {
 
         readTarget(intent);
         if (!starting && !tunnelStarted) {
-            startForeground(NOTIFICATION_ID, buildNotification("در حال پیدا کردن مسیر سالم…", false));
+            startForeground(NOTIFICATION_ID, buildNotification("در حال آماده‌سازی کانفیگ…", false));
             starting = true;
             stopping = false;
-            sendStatus("connecting", "در حال جستجوی مسیر سالم برای " + displayTarget() + "…", -1);
+            sendStatus("connecting", "در حال آماده‌سازی کانفیگ انتخاب‌شده…", -1);
             worker.execute(this::connectInBackground);
         }
         return START_STICKY;
@@ -107,26 +113,29 @@ public class InstaVpnService extends VpnService {
                 throw new Exception("برنامه انتخاب‌شده روی گوشی نصب نیست: " + targetPackage);
             }
 
-            ProxyDiscovery.ProxyNode node = ProxyDiscovery.findBest(message -> {
-                if (!stopping) sendStatus("connecting", message, -1);
-            });
+            activeProfile = ProfileManager.getSelected(this);
+            if (activeProfile == null) {
+                throw new Exception("کانفیگی انتخاب نشده است. از بخش «کانفیگ و ساب» یک کانفیگ اضافه و انتخاب کن.");
+            }
+
+            sendStatus("connecting", "راه‌اندازی " + activeProfile.displayType() + " • " + activeProfile.name + "…", -1);
+            String xrayConfig = ProfileManager.buildXrayConfig(activeProfile, LOCAL_SOCKS_PORT);
+            XrayEngine.start(this, xrayConfig);
             if (stopping) return;
 
-            sendStatus(
-                    "connecting",
-                    "مسیر " + node + " با TLS واقعی تایید شد؛ در حال ساخت VPN…",
-                    node.latencyMs
-            );
-
-            establishVpn(node);
+            Thread.sleep(250);
+            int latency = probeLocalSocks();
             if (stopping) return;
 
-            updateNotification(displayTarget() + " از تونل عبور می‌کند", true);
-            String transport = node.udpSupported ? "TCP/UDP" : "TCP";
+            sendStatus("connecting", "کانفیگ با اتصال واقعی به Instagram تایید شد؛ در حال ساخت VPN…", latency);
+            establishVpn();
+            if (stopping) return;
+
+            updateNotification(displayTarget() + " • " + activeProfile.name, true);
             sendStatus(
                     "connected",
-                    "اتصال برقرار شد. فقط ترافیک " + displayTarget() + " وارد تونل می‌شود. مسیر تاییدشده: " + transport,
-                    node.latencyMs
+                    "متصل شد. فقط ترافیک " + displayTarget() + " از «" + activeProfile.name + "» عبور می‌کند.",
+                    latency
             );
         } catch (Throwable e) {
             cleanup();
@@ -135,6 +144,68 @@ public class InstaVpnService extends VpnService {
             sendStatus("error", message, -1);
             stopForeground(true);
             stopSelf();
+        }
+    }
+
+    private int probeLocalSocks() throws Exception {
+        long start = System.nanoTime();
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", LOCAL_SOCKS_PORT), 3500);
+            socket.setSoTimeout(9000);
+            InputStream in = socket.getInputStream();
+            OutputStream out = socket.getOutputStream();
+
+            out.write(new byte[]{0x05, 0x01, 0x00});
+            out.flush();
+            byte[] hello = readExactly(in, 2);
+            if (hello[0] != 0x05 || hello[1] != 0x00) {
+                throw new Exception("SOCKS داخلی Xray پاسخ معتبر نداد.");
+            }
+
+            byte[] domain = "www.instagram.com".getBytes(StandardCharsets.US_ASCII);
+            byte[] req = new byte[7 + domain.length];
+            req[0] = 0x05;
+            req[1] = 0x01;
+            req[2] = 0x00;
+            req[3] = 0x03;
+            req[4] = (byte) domain.length;
+            System.arraycopy(domain, 0, req, 5, domain.length);
+            req[5 + domain.length] = 0x01;
+            req[6 + domain.length] = (byte) 0xBB;
+            out.write(req);
+            out.flush();
+
+            byte[] head = readExactly(in, 4);
+            if (head[0] != 0x05 || head[1] != 0x00) {
+                int code = head[1] & 0xff;
+                throw new Exception("کانفیگ نتوانست به Instagram وصل شود (SOCKS code " + code + ").");
+            }
+            skipSocksAddress(in, head[3] & 0xff);
+        }
+        return (int) ((System.nanoTime() - start) / 1_000_000L);
+    }
+
+    private byte[] readExactly(InputStream in, int count) throws Exception {
+        byte[] data = new byte[count];
+        int offset = 0;
+        while (offset < count) {
+            int n = in.read(data, offset, count - offset);
+            if (n < 0) throw new Exception("پاسخ SOCKS ناقص بود.");
+            offset += n;
+        }
+        return data;
+    }
+
+    private void skipSocksAddress(InputStream in, int atyp) throws Exception {
+        if (atyp == 0x01) {
+            readExactly(in, 4 + 2);
+        } else if (atyp == 0x04) {
+            readExactly(in, 16 + 2);
+        } else if (atyp == 0x03) {
+            int len = readExactly(in, 1)[0] & 0xff;
+            readExactly(in, len + 2);
+        } else {
+            throw new Exception("پاسخ SOCKS نوع آدرس ناشناخته داشت.");
         }
     }
 
@@ -153,7 +224,7 @@ public class InstaVpnService extends VpnService {
         return "برنامه انتخاب‌شده";
     }
 
-    private void establishVpn(ProxyDiscovery.ProxyNode node) throws Exception {
+    private void establishVpn() throws Exception {
         Builder builder = new Builder()
                 .setSession("InstaTunnel/per-App")
                 .setBlocking(false)
@@ -173,7 +244,7 @@ public class InstaVpnService extends VpnService {
         File config = new File(getCacheDir(), "hev-instatunnel.yml");
         String yaml = "misc:\n" +
                 "  task-stack-size: 86016\n" +
-                "  connect-timeout: 7000\n" +
+                "  connect-timeout: 10000\n" +
                 "  tcp-read-write-timeout: 300000\n" +
                 "  udp-read-write-timeout: 60000\n" +
                 "  log-level: warn\n" +
@@ -184,8 +255,8 @@ public class InstaVpnService extends VpnService {
                 "  ipv6: 'fd00:1:fd00:1::1'\n" +
                 "  icmp: 'reply'\n" +
                 "socks5:\n" +
-                "  address: '" + node.host + "'\n" +
-                "  port: " + node.port + "\n" +
+                "  address: '127.0.0.1'\n" +
+                "  port: " + LOCAL_SOCKS_PORT + "\n" +
                 "  udp: 'udp'\n" +
                 "mapdns:\n" +
                 "  address: " + MAPPED_DNS + "\n" +
@@ -204,7 +275,7 @@ public class InstaVpnService extends VpnService {
 
         Thread.sleep(350);
         if (!TProxyService.TProxyIsRunning()) {
-            throw new Exception("موتور TUN بلافاصله متوقف شد؛ کانفیگ داخلی معتبر نیست.");
+            throw new Exception("موتور TUN بلافاصله متوقف شد.");
         }
 
         tunnelStarted = true;
@@ -233,6 +304,9 @@ public class InstaVpnService extends VpnService {
             try { vpnInterface.close(); } catch (Exception ignored) {}
             vpnInterface = null;
         }
+
+        try { XrayEngine.stop(); } catch (Throwable ignored) {}
+        activeProfile = null;
     }
 
     private void sendStatus(String state, String message, int latency) {
