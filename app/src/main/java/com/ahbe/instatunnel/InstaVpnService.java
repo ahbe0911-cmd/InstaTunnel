@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import cc.hev.socks5.tunnel.HevSocks5Tunnel;
+import hev.htproxy.TProxyService;
 
 public class InstaVpnService extends VpnService {
     public static final String ACTION_START = "com.ahbe.instatunnel.START";
@@ -42,8 +42,8 @@ public class InstaVpnService extends VpnService {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile boolean stopping;
     private volatile boolean starting;
+    private volatile boolean tunnelStarted;
     private ParcelFileDescriptor vpnInterface;
-    private HevSocks5Tunnel tunnel;
     private String targetPackage = "";
     private String targetLabel = "";
 
@@ -63,7 +63,7 @@ public class InstaVpnService extends VpnService {
 
         readTarget(intent);
 
-        if (!starting && tunnel == null) {
+        if (!starting && !tunnelStarted) {
             startForeground(NOTIFICATION_ID, buildNotification("در حال پیدا کردن مسیر سالم…", false));
             starting = true;
             stopping = false;
@@ -126,7 +126,7 @@ public class InstaVpnService extends VpnService {
                     "اتصال برقرار شد. فقط ترافیک " + displayTarget() + " وارد تونل می‌شود.",
                     node.latencyMs
             );
-        } catch (Exception e) {
+        } catch (Throwable e) {
             cleanup();
             starting = false;
             String message = e.getMessage() == null ? "اتصال برقرار نشد." : e.getMessage();
@@ -180,11 +180,12 @@ public class InstaVpnService extends VpnService {
                 "socks5:\n" +
                 "  address: " + node.host + "\n" +
                 "  port: " + node.port + "\n" +
-                "  udp: 'tcp'\n" +
+                "  udp: 'udp'\n" +
                 "misc:\n" +
                 "  task-stack-size: 86016\n" +
                 "  connect-timeout: 7000\n" +
-                "  read-write-timeout: 60000\n" +
+                "  tcp-read-write-timeout: 60000\n" +
+                "  udp-read-write-timeout: 30000\n" +
                 "  log-level: error\n";
 
         try (FileOutputStream out = new FileOutputStream(config, false)) {
@@ -192,9 +193,8 @@ public class InstaVpnService extends VpnService {
             out.flush();
         }
 
-        tunnel = new HevSocks5Tunnel();
-        tunnel.startAsync(config.getAbsolutePath(), vpnInterface.getFileDescriptor());
-        if (!tunnel.isRunning()) throw new Exception("موتور TUN شروع نشد.");
+        TProxyService.TProxyStartService(config.getAbsolutePath(), vpnInterface.getFd());
+        tunnelStarted = true;
         starting = false;
     }
 
@@ -208,9 +208,9 @@ public class InstaVpnService extends VpnService {
     }
 
     private synchronized void cleanup() {
-        if (tunnel != null) {
-            try { tunnel.stop(); } catch (Exception ignored) {}
-            tunnel = null;
+        if (tunnelStarted) {
+            try { TProxyService.TProxyStopService(); } catch (Throwable ignored) {}
+            tunnelStarted = false;
         }
         if (vpnInterface != null) {
             try { vpnInterface.close(); } catch (Exception ignored) {}
